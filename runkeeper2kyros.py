@@ -42,6 +42,7 @@ BBDD_NAME = config['BBDD_name']
 KCS_HOST = config['KCS_HOST']
 KCS_PORT = config['KCS_PORT']
 
+RUNKEEPER_AUTHORIZATION = config['authorization']
 RUNKEEPER_URL_FEED = config['url_feed']
 RUNKEEPER_ACCEPT_FEED = config['accept_feed']
 RUNKEEPER_ACCEPT_ACTIVITY = config['accept_activity']
@@ -169,7 +170,8 @@ def processActivity(authorization, imei, activityId):
 			# recorrer el json de respuesta 
 			activity = json.loads(response.content)
 			str_start_time = activity['start_time']
-			start_time = (calendar.timegm(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))*1000)
+			start_time = (time.mktime(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))*1000)
+			#print start_time
 			activity_path = activity['path']
 			activity_distance = activity['distance']
 			#lon_anterior, lat_anterior, epoch_anterior = 0,0,0
@@ -179,7 +181,8 @@ def processActivity(authorization, imei, activityId):
 				latitude = activity_path[index]['latitude']
 				longitude = activity_path[index]['longitude']
 				timestamp = activity_path[index]['timestamp']
-				epoch_date = start_time + (int(timestamp*1000))				
+				epoch_date = start_time + (int(timestamp*1000))	
+				#print epoch_date			
 				speed = 0
 				if (timestamp_anterior!=0):
 					metros = activity_distance[index]['distance']
@@ -257,6 +260,8 @@ def main():
 
 if __name__ == '__main__':
     #main()
+    #processActivity(RUNKEEPER_AUTHORIZATION, 109997775551, 862297072)
+    
     runkeeperKyros = getRunkeeperKyrosData()
     for data in runkeeperKyros:
     	deviceId = data[0]
@@ -267,4 +272,5 @@ if __name__ == '__main__':
     	imei = result[0]
     	
     	processNewActivities(authorization, deviceId, imei, typeActivity, lastActivityId)
+    
     	
