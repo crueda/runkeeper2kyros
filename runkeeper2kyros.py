@@ -19,6 +19,7 @@ import sys
 import calendar
 import logging, logging.handlers
 import json  
+import socket 
 
 from threading import Thread
 import MySQLdb as mdb
@@ -112,7 +113,7 @@ def send2kcs(body):
 						pass
 					time.sleep(connectionRetry)
 
-def processActivity(activityId):
+def processActivity(imei, activityId):
 	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_ACTIVITY, "Authorization": "Bearer " + RUNKEEPER_AUTHORIZATION}	
 	try:
 		response = requests.get(RUNKEEPER_URL_FEED + "/" + str(activityId), headers=headers, verify=False, timeout=2)
@@ -121,16 +122,21 @@ def processActivity(activityId):
 			# recorrer el json de respuesta 
 			activity = json.loads(response.content)
 			str_start_time = activity['start_time']
-			print str_start_time
-			start_time = calendar.timegm(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))
-			print start_time
+			start_time = (calendar.timegm(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))*1000)
 			activity_path = activity['path']
 			for index in range(len(activity_path)):
-				altitude = activity_path[index]['altitude']
+				altitude = int(activity_path[index]['altitude'])
 				latitude = activity_path[index]['latitude']
 				longitude = activity_path[index]['longitude']
 				timestamp = activity_path[index]['timestamp']
-				#print altitude
+				speed = 0
+				heading = 0
+				epoch_date = start_time + (int(timestamp*1000))
+				s = epoch_date / 1000.0
+				pos_date = datetime.datetime.fromtimestamp(s).strftime('%Y%m%d%H%M%S')
+				#1013973778,20120519161619,-3.784988,43.398126,speed,heading,altitude,9,2,0.0,0.9,3836
+				trama_kcs = str(imei) + ',' + str(pos_date) + ',' + str(longitude) + ',' + str(latitude) + ',' + str(speed) + ',' + str(heading) + ',' + str(altitude) + ',9,2,0.0,0.9,3836'
+				send2kcs (trama_kcs)
 			return True
 		else:
 			logger.debug("Codigo de error al recuperar los datos de la actividad: " + str(response.status_code))
@@ -140,7 +146,7 @@ def processActivity(activityId):
 		logger.debug("Error al al recuperar los datos de la actividad")
 	return False
 
-def processNewActivities(typeActivity, lastActivityId):
+def processNewActivities(imei, typeActivity, lastActivityId):
 	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_FEED, "Authorization": "Bearer " + RUNKEEPER_AUTHORIZATION}	
 	try:
 		response = requests.get(RUNKEEPER_URL_FEED, headers=headers, verify=False, timeout=2)
@@ -156,7 +162,7 @@ def processNewActivities(typeActivity, lastActivityId):
 					activityId = uri[19:len(uri)]
 					processActivity (activityId)
 			'''
-			processActivity(862297072)
+			processActivity(imei, 862297072)
 			return True
 		else:
 			logger.debug("Codigo de error al recuperar el feed de actividades: " + str(response.status_code))
@@ -177,4 +183,4 @@ def main():
 
 if __name__ == '__main__':
     #main()
-	processNewActivities('Cycling', 0)
+	processNewActivities(109997775551, 'Cycling', 0)
