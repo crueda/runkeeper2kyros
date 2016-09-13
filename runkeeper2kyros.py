@@ -20,7 +20,7 @@ import calendar
 import logging, logging.handlers
 import json  
 import socket 
-
+from haversine import haversine
 from threading import Thread
 import MySQLdb
 import requests
@@ -151,6 +151,7 @@ def updateLastActivityId(deviceId, activityId):
 		query = """UPDATE RUNKEEPER set LAST_ACTIVITY_ID=yyy where DEVICE_ID=xxx"""
 		queryRunkeeper = query.replace('xxx', str(deviceId)).replace('yyy', str(activityId))
 		cursor.execute(queryRunkeeper)
+		dbConnection.commit()
 		cursor.close
 		dbConnection.close
 	
@@ -170,14 +171,40 @@ def processActivity(authorization, imei, activityId):
 			str_start_time = activity['start_time']
 			start_time = (calendar.timegm(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))*1000)
 			activity_path = activity['path']
+			activity_distance = activity['distance']
+			#lon_anterior, lat_anterior, epoch_anterior = 0,0,0
+			timestamp_anterior, metros_anterior = 0,0
 			for index in range(len(activity_path)):
 				altitude = int(activity_path[index]['altitude'])
 				latitude = activity_path[index]['latitude']
 				longitude = activity_path[index]['longitude']
 				timestamp = activity_path[index]['timestamp']
+				epoch_date = start_time + (int(timestamp*1000))				
 				speed = 0
+				if (timestamp_anterior!=0):
+					metros = activity_distance[index]['distance']
+					distancia = metros - metros_anterior
+					segundos = timestamp - timestamp_anterior
+					speed = (distancia/segundos)*3.6
+					#print speed
+					metros_anterior = metros
+
+				'''
+				if (lon_anterior!=0):
+					segundos = (epoch_date - epoch_anterior)/1000
+					pos_anterior = (lat_anterior, lon_anterior)
+					pos_actual = (latitude, longitude)
+					metros = haversine(pos_anterior, pos_actual) * 1000
+					velocidad = (metros/segundos)*3.6
+					#print velocidad
+				'''
+				timestamp_anterior = timestamp
 				heading = 0
-				epoch_date = start_time + (int(timestamp*1000))
+				#lon_anterior = longitude
+				#lat_anterior = latitude
+				#epoch_anterior = epoch_date
+
+				#trama_gprmd= GPRMC,113548.000,A,4020.1086,N,00340.2196,W,44.39,257.57,130916,,
 				s = epoch_date / 1000.0
 				pos_date = datetime.datetime.fromtimestamp(s).strftime('%Y%m%d%H%M%S')
 				trama_kcs = str(imei) + ',' + str(pos_date) + ',' + str(longitude) + ',' + str(latitude) + ',' + str(speed) + ',' + str(heading) + ',' + str(altitude) + ',9,2,0.0,0.9,3836'
@@ -206,11 +233,10 @@ def processNewActivities(authorization, deviceId, imei, typeActivity, lastActivi
 				if (activity['type'] == typeActivity):
 					uri = activity['uri']
 					activityId = uri[19:len(uri)]
-					if (activityId > lastActivityId):
+					if (int(activityId) > int(lastActivityId)):
 						processActivity (authorization, imei, activityId)
 						updateLastActivityId(deviceId, activityId)
 			
-			#processActivity(imei, 862297072)
 			return True
 		else:
 			logger.debug("Codigo de error al recuperar el feed de actividades: " + str(response.status_code))
@@ -237,7 +263,8 @@ if __name__ == '__main__':
     	authorization = data[1]
     	typeActivity = data[2]
     	lastActivityId = data[3]
-
     	result = getImei(deviceId)
     	imei = result[0]
+    	
     	processNewActivities(authorization, deviceId, imei, typeActivity, lastActivityId)
+    	
