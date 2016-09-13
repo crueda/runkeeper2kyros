@@ -22,7 +22,7 @@ import json
 import socket 
 
 from threading import Thread
-import MySQLdb as mdb
+import MySQLdb
 import requests
 
 ########################################################################
@@ -42,7 +42,6 @@ BBDD_NAME = config['BBDD_name']
 KCS_HOST = config['KCS_HOST']
 KCS_PORT = config['KCS_PORT']
 
-RUNKEEPER_AUTHORIZATION = config['authorization']
 RUNKEEPER_URL_FEED = config['url_feed']
 RUNKEEPER_ACCEPT_FEED = config['accept_feed']
 RUNKEEPER_ACCEPT_ACTIVITY = config['accept_activity']
@@ -59,7 +58,7 @@ try:
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     loggerHandler.setFormatter(formatter)
     logger.addHandler(loggerHandler)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 except:
     print '------------------------------------------------------------------'
     print '[ERROR] Error writing log at %s' % LOG
@@ -82,7 +81,7 @@ def send2kcs(body):
 		socketKCS.connect((KCS_HOST, int(KCS_PORT)))
 		connectedKCS = True
 		socketKCS.send(body + '\r\n')
-		logger.info ("Sent to KCS: %s " % body)
+		logger.debug ("Sent to KCS: %s " % body)
 		sendMessage = True
 		socketKCS.close()
 		time.sleep(KCS_SLEEP_TIME)
@@ -113,11 +112,58 @@ def send2kcs(body):
 						pass
 					time.sleep(connectionRetry)
 
-def processActivity(imei, activityId):
-	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_ACTIVITY, "Authorization": "Bearer " + RUNKEEPER_AUTHORIZATION}	
+def getRunkeeperKyrosData():
+	try:
+		dbConnection = MySQLdb.connect(BBDD_HOST, BBDD_USERNAME, BBDD_PASSWORD, BBDD_NAME)
+
+		cursor = dbConnection.cursor()
+		queryRunkeepeer = """SELECT DEVICE_ID, 
+			AUTHORIZATION, TYPE_ACTIVITY, LAST_ACTIVITY_ID FROM RUNKEEPER"""
+		cursor.execute(queryRunkeepeer)
+		result = cursor.fetchall()
+		cursor.close
+		dbConnection.close
+	
+		return result
+	except Exception, error:
+		logger.error('Error getting data from database: %s.', error )
+
+def getImei(deviceId):
+	try:
+		dbConnection = MySQLdb.connect(BBDD_HOST, BBDD_USERNAME, BBDD_PASSWORD, BBDD_NAME)
+		cursor = dbConnection.cursor()
+		query = """SELECT IMEI FROM OBT where DEVICE_ID=xxx"""
+		queryImei = query.replace('xxx', str(deviceId))
+		cursor.execute(queryImei)
+		result = cursor.fetchone()
+		cursor.close
+		dbConnection.close
+	
+		return result
+	except Exception, error:
+		logger.error('Error getting data from database: %s.', error )
+
+
+def updateLastActivityId(deviceId, activityId):
+	try:
+		dbConnection = MySQLdb.connect(BBDD_HOST, BBDD_USERNAME, BBDD_PASSWORD, BBDD_NAME)
+		cursor = dbConnection.cursor()
+		query = """UPDATE RUNKEEPER set LAST_ACTIVITY_ID=yyy where DEVICE_ID=xxx"""
+		queryRunkeeper = query.replace('xxx', str(deviceId)).replace('yyy', str(activityId))
+		cursor.execute(queryRunkeeper)
+		cursor.close
+		dbConnection.close
+	
+		return result
+	except Exception, error:
+		logger.error('Error getting data from database: %s.', error )
+
+
+def processActivity(authorization, imei, activityId):
+	logger.info ("process runkeeper activity: %s " % str(activityId))
+	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_ACTIVITY, "Authorization": "Bearer " + authorization}	
 	try:
 		response = requests.get(RUNKEEPER_URL_FEED + "/" + str(activityId), headers=headers, verify=False, timeout=2)
-		print "code:"+ str(response.status_code)
 		if (response.status_code == 200):
 			# recorrer el json de respuesta 
 			activity = json.loads(response.content)
@@ -134,7 +180,6 @@ def processActivity(imei, activityId):
 				epoch_date = start_time + (int(timestamp*1000))
 				s = epoch_date / 1000.0
 				pos_date = datetime.datetime.fromtimestamp(s).strftime('%Y%m%d%H%M%S')
-				#1013973778,20120519161619,-3.784988,43.398126,speed,heading,altitude,9,2,0.0,0.9,3836
 				trama_kcs = str(imei) + ',' + str(pos_date) + ',' + str(longitude) + ',' + str(latitude) + ',' + str(speed) + ',' + str(heading) + ',' + str(altitude) + ',9,2,0.0,0.9,3836'
 				send2kcs (trama_kcs)
 			return True
@@ -146,23 +191,26 @@ def processActivity(imei, activityId):
 		logger.debug("Error al al recuperar los datos de la actividad")
 	return False
 
-def processNewActivities(imei, typeActivity, lastActivityId):
-	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_FEED, "Authorization": "Bearer " + RUNKEEPER_AUTHORIZATION}	
+def processNewActivities(authorization, deviceId, imei, typeActivity, lastActivityId):
+	logger.info ("processNewActivities. DEVICE_ID: %s " % str(deviceId))
+	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_FEED, "Authorization": "Bearer " + authorization}	
 	try:
 		response = requests.get(RUNKEEPER_URL_FEED, headers=headers, verify=False, timeout=2)
 		if (response.status_code == 200):
 			# recorrer el json de respuesta empezando por la mas antigua
 			feed = json.loads(response.content)
 			feed_activities = feed['items']
-			'''
+			
 			for index in reversed(xrange(len(feed_activities))):
 				activity = feed_activities[index]
 				if (activity['type'] == typeActivity):
 					uri = activity['uri']
 					activityId = uri[19:len(uri)]
-					processActivity (activityId)
-			'''
-			processActivity(imei, 862297072)
+					if (activityId > lastActivityId):
+						processActivity (authorization, imei, activityId)
+						updateLastActivityId(deviceId, activityId)
+			
+			#processActivity(imei, 862297072)
 			return True
 		else:
 			logger.debug("Codigo de error al recuperar el feed de actividades: " + str(response.status_code))
@@ -183,4 +231,13 @@ def main():
 
 if __name__ == '__main__':
     #main()
-	processNewActivities(109997775551, 'Cycling', 0)
+    runkeeperKyros = getRunkeeperKyrosData()
+    for data in runkeeperKyros:
+    	deviceId = data[0]
+    	authorization = data[1]
+    	typeActivity = data[2]
+    	lastActivityId = data[3]
+
+    	result = getImei(deviceId)
+    	imei = result[0]
+    	processNewActivities(authorization, deviceId, imei, typeActivity, lastActivityId)
