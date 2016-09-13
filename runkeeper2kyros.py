@@ -38,12 +38,16 @@ BBDD_USERNAME = config['BBDD_username']
 BBDD_PASSWORD = config['BBDD_password']
 BBDD_NAME = config['BBDD_name']
 
+KCS_HOST = config['KCS_HOST']
+KCS_PORT = config['KCS_PORT']
+
 RUNKEEPER_AUTHORIZATION = config['authorization']
 RUNKEEPER_URL_FEED = config['url_feed']
 RUNKEEPER_ACCEPT_FEED = config['accept_feed']
 RUNKEEPER_ACCEPT_ACTIVITY = config['accept_activity']
 
 DEFAULT_SLEEP_TIME = float(config['sleep_time'])
+KCS_SLEEP_TIME = float(config['kcs_sleep_time'])
 
 ########################################################################
 
@@ -70,6 +74,44 @@ except:
 #
 ########################################################################
 
+def send2kcs(body):
+	connectionRetry = 0.5
+	try:
+		socketKCS = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		socketKCS.connect((KCS_HOST, int(KCS_PORT)))
+		connectedKCS = True
+		socketKCS.send(body + '\r\n')
+		logger.info ("Sent to KCS: %s " % body)
+		sendMessage = True
+		socketKCS.close()
+		time.sleep(KCS_SLEEP_TIME)
+	except socket.error,v:
+		logger.error('Error sending data: %s', v[0])
+		try:
+			socketKCS.close()
+			logger.info('Trying close connection...')
+		except Exception, error:
+			logger.info('Error closing connection: %s', error)
+			pass
+			while sendMessage==False:
+				try:
+					logger.info('Trying reconnection to KCS...')
+					socketKCS = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+					socketKCS.connect((KCS_HOST, int(KCS_PORT)))
+					connectedKCS = True
+					socketKCS.send(body + '\r\n')
+					logger.info ("Sent to KCS: %s " % body)
+					sendMessage = True
+					socketKCS.close()
+				except Exception, error:
+					logger.info('Reconnection to KCS failed....waiting %d seconds to retry.' , connectionRetry)
+					sendMessage=False
+					try:
+						socketKCS.close()
+					except:
+						pass
+					time.sleep(connectionRetry)
+
 def processActivity(activityId):
 	headers = {"Content-type": "application/x-www-form-urlencoded", "Host": "api.runkeeper.com", "Accept": RUNKEEPER_ACCEPT_ACTIVITY, "Authorization": "Bearer " + RUNKEEPER_AUTHORIZATION}	
 	try:
@@ -78,10 +120,17 @@ def processActivity(activityId):
 		if (response.status_code == 200):
 			# recorrer el json de respuesta 
 			activity = json.loads(response.content)
+			str_start_time = activity['start_time']
+			print str_start_time
+			start_time = calendar.timegm(time.strptime(str_start_time, '%a, %d %b %Y %H:%M:%S'))
+			print start_time
 			activity_path = activity['path']
 			for index in range(len(activity_path)):
 				altitude = activity_path[index]['altitude']
-				print altitude
+				latitude = activity_path[index]['latitude']
+				longitude = activity_path[index]['longitude']
+				timestamp = activity_path[index]['timestamp']
+				#print altitude
 			return True
 		else:
 			logger.debug("Codigo de error al recuperar los datos de la actividad: " + str(response.status_code))
