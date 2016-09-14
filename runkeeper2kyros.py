@@ -255,13 +255,8 @@ def processNewActivities(authorization, deviceId, imei, typeActivity, lastActivi
 ########################################################################
 
 def main():
-	while True:
-		time.sleep(DEFAULT_SLEEP_TIME)
-
-if __name__ == '__main__':
-    #main()
-    #processActivity(RUNKEEPER_AUTHORIZATION, 109997775551, 862297072)
-    
+	#while True:
+		#time.sleep(DEFAULT_SLEEP_TIME)
     runkeeperKyros = getRunkeeperKyrosData()
     for data in runkeeperKyros:
     	deviceId = data[0]
@@ -272,5 +267,12 @@ if __name__ == '__main__':
     	imei = result[0]
     	
     	processNewActivities(authorization, deviceId, imei, typeActivity, lastActivityId)
+		
+
+if __name__ == '__main__':
+    main()
+    #processActivity(RUNKEEPER_AUTHORIZATION, 109997775551, 862297072)
+    
+    
     
     	
